@@ -24,16 +24,18 @@ use <pin_connectors/pins.scad>
 
 //Constructs a roughed out arduino board
 //Current only USB, power and headers
-module arduino(boardType = UNO) {
+module arduino(boardType = UNO, posx = 0,  posy = 0) {
   //The PCB with holes
+  translate([posx,posy,0]) {
   difference() {
     color("SteelBlue") 
-      boardShape( boardType );
+      boardShape( boardType);
     translate([0,0,-pcbHeight * 0.5]) holePlacement(boardType = boardType)
       color("SteelBlue") cylinder(r = mountingHoleRadius, h = pcbHeight * 2, $fn=32);
   }
   //Add all components to board
   components( boardType = boardType, component = ALL );
+  }
 }
 
 //Creates a bumper style enclosure that fits tightly around the edge of the PCB.
@@ -98,12 +100,32 @@ module bumper( boardType = UNO, mountingHoles = false ) {
 }
 
 //Setting for enclosure mounting holes (Not Arduino mounting)
+//Creates assembly for top / bottom enclosure
+ASSEMBLY_CLIP = 0;
+ASSEMBLY_SCREW = 1;
+screw_width = 1;
+screw_outer_width = 3;
+/* below unused ? */
 NOMOUNTINGHOLES = 0;
 INTERIORMOUNTINGHOLES = 1;
 EXTERIORMOUNTINGHOLES = 2;
 
+module tube(outer = screw_width + 2, inner = screw_width, height = 10) {
+    difference() {
+        cylinder(r1=outer, r2=outer, h = height);
+        translate ([0,0,height/2+1]) cylinder(r1=inner, r2=inner, h = height/2);
+    }
+}
+
+module screw_tap(outer = screw_width + 8, inner = screw_width, height = 2*wall) {
+    union() {
+        cylinder(r1=inner, r2=inner, h = height/2 + 1);
+        translate ([0,0,height/2+1]) cylinder(r1=outer, r2=outer, h = height/2+1);
+    }
+}
+
 //Create a board enclosure
-module enclosure(boardType = UNO, wall = 3, offset = 3, heightExtension = 10, cornerRadius = 3, mountType = TAPHOLE) {
+module enclosure(boardType = UNO, wall = 3, offset = 3, heightExtension = 10, cornerRadius = 3, mountType = TAPHOLE, assembly = ASSEMBLY_CLIP, posx = 0, posy = 0) {
   standOffHeight = 5;
 
   dimensions = boardDimensions(boardType);
@@ -117,45 +139,65 @@ module enclosure(boardType = UNO, wall = 3, offset = 3, heightExtension = 10, co
   union() {
     difference() {
       //Main box shape
-      boundingBox(boardType = boardType, height = enclosureHeight, offset = wall + offset, include=PCB, cornerRadius = wall);
-  
+      union() {
+        boundingBox(boardType = boardType, height = enclosureHeight, offset = wall + offset, include=PCB, cornerRadius = wall);
+      }
+
       translate([ 0, 0, wall]) {
         //Interior of box
         boundingBox(boardType = boardType, height = enclosureHeight, offset = offset, include=PCB, cornerRadius = wall);
   
         //Punch outs for USB and POWER
-        translate([0, 0, standOffHeight]) {
+        translate([posx, posy, standOffHeight]) {
           components(boardType = boardType, offset = 1, extension = wall + offset + 10);
         }
       }
       
-      //Holes for lid clips
-      translate([0, enclosureDepth * 0.75 - (offset + wall), enclosureHeight]) {
-        translate([-offset, 0, 0])
-          rotate([0, 180, 90]) clipHole(clipHeight = 10, holeDepth = wall + 0.2);
-        translate([offset + boardDim[0], 0, 0])
-          rotate([0, 180, 270]) clipHole(clipHeight = 10, holeDepth = wall + 0.2);
+      if (assembly == ASSEMBLY_CLIP) {
+        //Holes for lid clips
+        translate([0, enclosureDepth * 0.75 - (offset + wall), enclosureHeight]) {
+          translate([-offset, 0, 0])
+            rotate([0, 180, 90]) clipHole(clipHeight = 10, holeDepth = wall + 0.2);
+          translate([offset + boardDim[0], 0, 0])
+            rotate([0, 180, 270]) clipHole(clipHeight = 10, holeDepth = wall + 0.2);
+        }
+        translate([0, enclosureDepth * 0.25 - (offset + wall), enclosureHeight]) {
+          translate([-offset, 0, 0])
+            rotate([0, 180, 90]) clipHole(clipHeight = 10, holeDepth = wall + 0.2);
+          translate([offset + dimensions[0], 0, 0])
+            rotate([0, 180, 270]) clipHole(clipHeight = 10, holeDepth = wall + 0.2);
+        }
       }
-    
-      translate([0, enclosureDepth * 0.25 - (offset + wall), enclosureHeight]) {
-        translate([-offset, 0, 0])
-          rotate([0, 180, 90]) clipHole(clipHeight = 10, holeDepth = wall + 0.2);
-        translate([offset + dimensions[0], 0, 0])
-          rotate([0, 180, 270]) clipHole(clipHeight = 10, holeDepth = wall + 0.2);
-      }   
     }
-    translate([0, 0, wall]) {
+    
+    translate([posx, posy, wall]) {
       standoffs(boardType = boardType, height = standOffHeight, mountType = mountType);
     }
-  }
+    
+    if (assembly == ASSEMBLY_SCREW) {
+      //Cylinder tube for screw mounting
+      translate([0, enclosureDepth - offset - 4*wall, wall]) {
+        translate([-offset +wall, screw_outer_width, 0])
+          rotate([0, 0, 0]) tube(outer=screw_outer_width, inner=screw_width, height = enclosureHeight-wall*1.5);
+        translate([offset + boardDim[0] - wall, screw_outer_width, 0])
+           rotate([0, 0, 0]) tube(outer=screw_outer_width, inner=screw_width, height = enclosureHeight-wall*1.5);
+        }
+       translate([0, -offset + wall, wall]) {
+          translate([-offset +wall, 0, 0])
+            rotate([0, 0, 0]) tube(outer=screw_outer_width, inner=screw_width, height = enclosureHeight-wall*1.5);
+          translate([offset + dimensions[0] - wall, 0, 0])
+            rotate([0, 0, 0])tube(outer=screw_outer_width, inner=screw_width, height = enclosureHeight-wall*1.5);
+        }
+      }
+   }
 }
 
 //Create a snap on lid for enclosure
-module enclosureLid( boardType = UNO, wall = 3, offset = 3, cornerRadius = 3, ventHoles = false) {
+module enclosureLid( boardType = UNO, wall = 3, offset = 3, cornerRadius = 3, ventHoles = false, assembly = ASSEMBLY_CLIP) {
   dimensions = boardDimensions(boardType);
   boardDim = boardDimensions(boardType);
   pcbDim = pcbDimensions(boardType);
-
+    
   enclosureWidth = pcbDim[0] + (wall + offset) * 2;
   enclosureDepth = pcbDim[1] + (wall + offset) * 2;
 
@@ -166,23 +208,39 @@ module enclosureLid( boardType = UNO, wall = 3, offset = 3, cornerRadius = 3, ve
       translate([0, 0, -wall * 0.5])
         boundingBox(boardType = boardType, height = wall * 0.5, offset = offset - 0.5, include=PCB, cornerRadius = wall);
     
-      //Lid clips
-      translate([0, enclosureDepth * 0.75 - (offset + wall), 0]) {
-        translate([-offset, 0, 0])
-          rotate([0, 180, 90]) clip(clipHeight = 10);
-        translate([offset + boardDim[0], 0, 0])
-          rotate([0, 180, 270]) clip(clipHeight = 10);
+      if (assembly == ASSEMBLY_CLIP) {
+          //Lid clips
+          translate([0, enclosureDepth * 0.75 - (offset + wall), 0]) {
+            translate([-offset, 0, 0])
+              rotate([0, 180, 90]) clip(clipHeight = 10);
+            translate([offset + boardDim[0], 0, 0])
+              rotate([0, 180, 270]) clip(clipHeight = 10);
+          }
+        
+          translate([0, enclosureDepth * 0.25 - (offset + wall), 0]) {
+            translate([-offset, 0, 0])
+              rotate([0, 180, 90]) clip(clipHeight = 10);
+            translate([offset + dimensions[0], 0, 0])
+              rotate([0, 180, 270]) clip(clipHeight = 10);
+          }
       }
-    
-      translate([0, enclosureDepth * 0.25 - (offset + wall), 0]) {
-        translate([-offset, 0, 0])
-          rotate([0, 180, 90]) clip(clipHeight = 10);
-        translate([offset + dimensions[0], 0, 0])
-          rotate([0, 180, 270]) clip(clipHeight = 10);
-      }
-
-    }
   }
+  if (assembly == ASSEMBLY_SCREW) {
+      //Cylinder tube for screw mounting
+      translate([0, enclosureDepth - offset - 4*wall, -1*wall]) {
+        translate([-offset +wall, screw_outer_width, 0])
+          rotate([0, 0, 0]) screw_tap(outer=screw_outer_width, inner=screw_width, height = 2*wall);
+        translate([offset + boardDim[0] - wall, screw_outer_width, 0])
+           rotate([0, 0, 0]) screw_tap(outer=screw_outer_width, inner=screw_width, height = 2*wall);
+        }
+       translate([0, -offset + wall, -1*wall]) {
+          translate([-offset +wall, 0, 0])
+            rotate([0, 0, 0]) screw_tap(outer=screw_outer_width, inner=screw_width, height = 2*wall);
+          translate([offset + dimensions[0] - wall, 0, 0])
+            rotate([0, 0, 0])screw_tap(outer=screw_outer_width, inner=screw_width, height = 2*wall);
+       }
+     }
+   }
 }
 
 //Offset from board. Negative values are insets
@@ -236,6 +294,8 @@ module boundingBox(boardType = UNO, offset = 0, height = 0, cornerRadius = 0, in
 //Creates standoffs for different boards
 TAPHOLE = 0;
 PIN = 1;
+
+
 
 module standoffs( 
   boardType = UNO, 
@@ -412,6 +472,7 @@ YUN = 8;
 INTELGALILEO = 9;
 TRE = 10;
 ETHERNET = 11;
+NANO = 12;
 
 /********************************** MEASUREMENTS **********************************/
 pcbHeight = 1.7;
@@ -461,6 +522,14 @@ megaHoles = [
   [  2.54, 90.17 ],
   [  50.8, 96.52 ]
   ];
+  
+// Original nano holes
+nanoHoles = [
+  [  1, 1 ],
+  [  1, 42 ],
+  [  16.5, 42 ],
+  [  16.5, 1 ]
+  ];
 
 boardHoles = [ 
   ngHoles,        //NG
@@ -474,7 +543,8 @@ boardHoles = [
   0,              //Yun
   0,              //Intel Galileo
   0,              //Tre
-  unoHoles        //Ethernet
+  unoHoles,        //Ethernet
+  nanoHoles,      // Nano
   ];
 
 /********************************** BOARD SHAPES **********************************/
@@ -501,6 +571,13 @@ megaBoardShape = [
   [  2.54, 99.06 ],
   [  0.0, 96.52 ]
   ];
+  
+  nanoBoardShape = [ 
+  [  0.0, 0.0 ],
+  [  17.5, 0.0 ],
+  [  17.5, 43 ],
+  [  0.0, 43]
+  ];
 
 boardShapes = [   
   ngBoardShape,   //NG
@@ -514,7 +591,8 @@ boardShapes = [
   0,              //Yun
   0,              //Intel Galileo
   0,              //Tre
-  ngBoardShape    //Ethernet
+  ngBoardShape,    //Ethernet
+  nanoBoardShape, //Nano
   ];  
 
 /*********************************** COMPONENTS ***********************************/
@@ -585,6 +663,12 @@ dueComponents = [
   [[40.7, -1.8, 0], [9.0, 13.2, 10.9], [0, -1, 0], POWER, "Black" ]
   ];
   
+  nanoComponents = [
+  [[0, 3.5, 0], [headerWidth, headerWidth * 14, headerHeight], [0, 0, 1], HEADER_F, "Black"],
+  [[15, 3.5, 0], [headerWidth, headerWidth * 14, headerHeight], [0, 0, 1], HEADER_F, "Black"],
+  [[5, -1.1, 0], [8, 9, 3], [0, -1, 0], USB, "LightGray" ],
+  ];
+  
 components = [
   ngComponents,         //NG
   ngComponents,         //Diecimila
@@ -597,7 +681,8 @@ components = [
   0,                    //Yun
   0,                    //Intel Galileo
   0,                    //Tre
-  etherComponents       //Ethernet
+  etherComponents,       //Ethernet
+  nanoComponents         //Nano
   ];
 
 /****************************** NON-BOARD PARAMETERS ******************************/
